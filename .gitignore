@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+build_dev/
+build_release/
+*.dll
+*.pdb
+
+# Local packaging copy
+/AimeeBugFixes/
+
+# Local-only files (machine paths, logs)
+workshop_update.vdf
+*.log
+LogAimme.txt
+
+# Source art (only Preview.png is shipped)
+About/*16-9*.png
+
+# IDE
+.vs/
+.vscode/
+*.user

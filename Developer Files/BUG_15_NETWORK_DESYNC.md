@@ -36,8 +36,8 @@ The issue is a network desynchronization caused by culling on dedicated servers:
 ### Bug 15 Idle-Based Sync via LaunchPad Booster (CRITICAL FIX)
 **Detects idle AIMeEs and forces position sync to bypass network culling:**
 
-When AIMeE velocity drops below 0.05 (idle state):
-1. Every 2 seconds, send position/rotation to ALL clients via `AIMeeSyncMessage`
+When AIMeE velocity drops below 0.001 (idle state):
+1. Every 5 seconds, send position/rotation to ALL clients via `AIMeeSyncMessage`
 2. Message is sent via LaunchPad Booster's `INetworkMessage` which bypasses vanilla culling
 3. All clients receive the update regardless of distance
 4. Ensures clients stay synchronized even when AIMeE is out of culling range
@@ -59,12 +59,12 @@ When AIMeE velocity drops below 0.05 (idle state):
 ## Why This Fixes The Issue
 
 **Before Fix:**
-1. Server physics runs → AIMeE velocity drops below 0.05 (idle)
+1. Server physics runs → AIMeE velocity drops below 0.001 (idle)
 2. Client far away (culled) → vanilla networking stops sending updates
 3. Client sees stale position → appears to teleport into ground when re-entering range
 
 **After Fix:**
-1. Server detects idle (velocity < 0.05) every 2 seconds
+1. Server detects idle (velocity < 0.001) every 5 seconds
 2. LaunchPad Booster message sent to ALL clients (no culling checks)
 3. Client receives update immediately → shows correct position in real-time
 4. No desynchronization, no apparent teleportation, smooth continuity when returning to range
@@ -72,7 +72,7 @@ When AIMeE velocity drops below 0.05 (idle state):
 ## Testing Recommendations
 
 **Critical Test** (reproduces the original bug):
-1. Install both AimeeBugFixes mod AND LaunchPadBooster mod
+1. Install AimeeBugFixes on the server and the client (LaunchPadBooster ships with StationeersLaunchPad)
 2. Start dedicated server with both mods
 3. Connect client and position AIMeE 
 4. **Move far away** (out of culling range) from the AIMeE
@@ -82,26 +82,26 @@ When AIMeE velocity drops below 0.05 (idle state):
 
 **Other Tests:**
 - Verify position stays synchronized even when AIMeE is idle
-- Confirm smooth position updates every 2 seconds while idle
+- Confirm smooth position updates every 5 seconds while idle
 - Monitor logs for "Bug15-IdleSync" and "Bug15-SyncMsg" messages
 - Test with multiple AIMeEs far apart to verify each one gets its sync
-- Verify no excessive network traffic (should only sync idle AIMeEs every 2 seconds)
+- Verify no excessive network traffic (should only sync idle AIMeEs every 5 seconds)
 
 ## Dependencies
-- **LaunchPadBooster mod** must be installed on the server and clients
+- **LaunchPadBooster 0.3+** (ships inside StationeersLaunchPad; not bundled with this mod)
   - Provides the `INetworkMessage` infrastructure
   - Handles mod registration and networking
-  - Available through Stationeers mod manager
 - BepInEx 5.4.x (for plugin loading)
 
 ## Compatibility Notes
 - Works on dedicated servers and single-player/co-op
 - Respects existing patches
 - No breaking changes to other mods
-- Requires LaunchPadBooster as a dependency (mod will warn if missing)
+- If LaunchPadBooster is missing or older than 0.3, only Bug 15 is disabled (logged as a warning); every other fix still loads
+- Booster's join check applies: in multiplayer, AimeeBugFixes must be installed on the server **and** every client. Any AimeeBugFixes version is accepted, so minor version differences don't block joining
 
 ## Performance Impact
-- Negligible - only sends messages every 2 seconds for IDLE AIMeEs (at rest)
+- Negligible - only sends messages every 5 seconds for IDLE AIMeEs (at rest)
 - When AIMeE is actively moving, no sync messages are sent (vanilla networking works fine)
 - Network message is small (under 100 bytes: ReferenceId + position + rotation)
 - All clients receive the message (broadcast), but processing is fast (simple position update)

@@ -22,9 +22,11 @@ using Assets.Scripts.Util;
 
 namespace AimeeBugFixes
 {
-    [BepInPlugin("com.florpydorp.aimeebugfixes", "AIMeE Bug Fixes", "0.15.3")]
+    [BepInPlugin("com.florpydorp.aimeebugfixes", "AIMeE Bug Fixes", Version)]
     public class Plugin : BaseUnityPlugin
     {
+        internal const string Version = "0.16.0";
+
         internal static ManualLogSource Log;
         private Harmony _harmony;
 
@@ -43,20 +45,29 @@ namespace AimeeBugFixes
         void Awake()
         {
             Log = Logger;
-            Log.LogInfo("AIMeE Bug Fixes v0.15.3 loading...");
-            Log.LogInfo(string.Format("  IsBatchMode={0}, RunSimulation={1}, IsDedicated={2}", GameManager.IsBatchMode, GameManager.RunSimulation, GameManager.IsBatchMode));
+            Log.LogInfo(string.Format("AIMeE Bug Fixes v{0} loading...", Version));
+            Log.LogInfo(string.Format("  IsBatchMode={0}, RunSimulation={1}", GameManager.IsBatchMode, GameManager.RunSimulation));
 
-            // Register the custom network message for Bug 10 desync fix
-            try
+            // Bug 15 networking is optional: LaunchPadBooster ships with StationeersLaunchPad,
+            // but older SLP builds bundle a Booster without INetworkMessage. All Booster types
+            // live behind Bug15_BoosterNet so this class never needs LaunchPadBooster.dll to load.
+            bool boosterNetworking = false;
+            if (Bug15_IdleSyncFix.IsBoosterNetworkingAvailable())
             {
-                // Create a Mod instance for the networking system
-                var bugFixMod = new LaunchPadBooster.Mod("AimeeBugFixes", "0.15.3");
-                bugFixMod.Networking.RegisterMessage<AIMeeSyncMessage>();
-                Log.LogInfo("  [Bug15] Registered AIMeeSyncMessage for network desync fix");
+                try
+                {
+                    Bug15_BoosterNet.Register();
+                    boosterNetworking = true;
+                    Log.LogInfo("  [Bug15] Registered AIMeeSyncMessage with LaunchPadBooster");
+                }
+                catch (Exception ex)
+                {
+                    Log.LogWarning(string.Format("  [Bug15] Failed to register AIMeeSyncMessage: {0}", ex.Message));
+                }
             }
-            catch (Exception ex)
+            else
             {
-                Log.LogWarning(string.Format("  [Bug15] Failed to register AIMeeSyncMessage: {0}", ex.Message));
+                Log.LogWarning("  [Bug15] LaunchPadBooster 0.3+ not found — idle position sync disabled (all other fixes still active)");
             }
 
             _harmony = new Harmony("com.florpydorp.aimeebugfixes");
@@ -124,9 +135,17 @@ namespace AimeeBugFixes
                 postfix: new HarmonyMethod(typeof(Bug3_WheelAnimationSyncFix), nameof(Bug3_WheelAnimationSyncFix.PhysicsUpdate_Postfix)));
 
             // Bug 15: Network desync when idle — sync position when AIMeE sits still
-            TryPatch(ref success, ref fail, "Bug15-IdleSync",
+            if (boosterNetworking)
+            {
+                TryPatch(ref success, ref fail, "Bug15-IdleSync",
+                    AccessTools.Method(typeof(WheeledBase), "PhysicsUpdate"),
+                    postfix: new HarmonyMethod(typeof(Bug15_IdleSyncFix), nameof(Bug15_IdleSyncFix.PhysicsUpdate_Postfix)));
+            }
+
+            // Bug 16: Idle AIMeE sinks into terrain / tips over on clients
+            TryPatch(ref success, ref fail, "Bug16-IdleClientSink",
                 AccessTools.Method(typeof(WheeledBase), "PhysicsUpdate"),
-                postfix: new HarmonyMethod(typeof(Bug15_IdleSyncFix), nameof(Bug15_IdleSyncFix.PhysicsUpdate_Postfix)));
+                postfix: new HarmonyMethod(typeof(Bug16_IdleClientSinkFix), nameof(Bug16_IdleClientSinkFix.PhysicsUpdate_Postfix)));
 
             // Bug 4: Roam overhaul — replaces Roam() entirely with hybrid old/new flow
             // Old code: search+move+mine+drive all in one flow, AIMeE always drives
@@ -507,12 +526,6 @@ namespace AimeeBugFixes
     // and skips all wheel force application when being carried. Calls
     // base DynamicThing.PhysicsUpdate via reflection for position tracking.
     // =========================================================================
-    // =========================================================================
-    // Bug 8: Carry collision — AIMeE ignores collisions when carried
-    // Fix: Prefix on WheeledBase.PhysicsUpdate that disables WheelColliders
-    // and skips all wheel force application when being carried. Calls
-    // base DynamicThing.PhysicsUpdate via reflection for position tracking.
-    // =========================================================================
     public static class Bug8_CarryCollisionFix
     {
         // Delegate to call DynamicThing.PhysicsUpdate directly (not the virtual dispatch)
@@ -579,16 +592,21 @@ namespace AimeeBugFixes
     }
 
     // =========================================================================
-    // BUG 10: Network desync when idle — sync position when AIMeE sits still
+    // BUG 15: Network desync when idle — sync position when AIMeE sits still
+    // Found, fixed and tested on dedicated servers by StormCircuit.
     //
-    // Problem: On dedicated servers, when players are far away (out of culling
-    // range), they stop receiving position updates. If AIMeE becomes idle or
-    // moves slowly, the client's cached position diverges from server reality,
-    // causing the appearance of teleportation into ground.
+    // Problem: On dedicated servers, when players are far away and AIMeE is
+    // idle, the client stops getting position updates for her (sleeping bodies
+    // are no longer sent). The client's cached position diverges from the
+    // server, so she appears sunk into the ground or tipped over when the
+    // player returns.
     //
-    // Fix: Idle-based sync via LaunchPad Booster. See IdleVelocityThreshold and IdleSyncIntervalSeconds.
-    // (idle), send position/rotation to all clients every IdleSyncIntervalSeconds seconds to ensure
-    // distant clients stay synchronized without interference with physics.
+    // Fix: While AIMeE is idle (velocity < IdleVelocityThreshold), the server
+    // sends her position/rotation to all clients every IdleSyncIntervalSeconds
+    // via a LaunchPadBooster network message (AIMeeSyncMessage).
+    //
+    // Only patched when LaunchPadBooster 0.3+ is loaded. Every Booster type is
+    // kept in Bug15_BoosterNet so this class loads without LaunchPadBooster.dll.
     // =========================================================================
     public static class Bug15_IdleSyncFix
     {
@@ -596,10 +614,22 @@ namespace AimeeBugFixes
         private const float IdleVelocityThreshold = 0.001f;
         private const float IdleSyncIntervalSeconds = 5f;
 
+        public static bool IsBoosterNetworkingAvailable()
+        {
+            try
+            {
+                return Type.GetType("LaunchPadBooster.Networking.INetworkMessage, LaunchPadBooster", false) != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static void PhysicsUpdate_Postfix(WheeledBase __instance)
         {
-            // Only sync idle AIMeE on server
-            if (!(__instance is RobotMining robot) || !NetworkManager.IsServer)
+            // Only sync idle AIMeE on a server that has clients
+            if (!(__instance is RobotMining robot) || !NetworkManager.IsServer || !NetworkServer.HasClients())
                 return;
 
             try
@@ -625,16 +655,9 @@ namespace AimeeBugFixes
                 _lastIdleSyncTime[id] = now;
 
                 // Send position/rotation sync for idle AIMeE via LaunchPad Booster
-                // This bypasses culling to ensure all clients see correct position
                 try
                 {
-                    var syncMsg = new AIMeeSyncMessage
-                    {
-                        ReferenceId = robot.ReferenceId,
-                        WorldPosition = robot.ThingTransformPosition,
-                        WorldRotation = robot.ThingTransform.rotation
-                    };
-                    syncMsg.SendAll(-1); // Send to all clients
+                    Bug15_BoosterNet.SendIdleSync(robot);
 
                     if (AimeeDebugOverlay.Enabled && Plugin.ShouldLog("Bug15-IdleSync", 10f))
                         Plugin.Log.LogInfo(string.Format(
@@ -645,10 +668,95 @@ namespace AimeeBugFixes
                 }
                 catch (Exception ex)
                 {
-                    Plugin.Log.LogWarning(string.Format("[Bug15] Failed to send idle sync: {0}", ex.Message));
+                    if (Plugin.ShouldLog("Bug15-SendErr", 30f))
+                        Plugin.Log.LogWarning(string.Format("[Bug15] Failed to send idle sync: {0}", ex.Message));
                 }
             }
             catch { }
+        }
+    }
+
+    // =========================================================================
+    // BUG 15 (LaunchPadBooster side): every method here touches Booster types,
+    // so they are only called after IsBoosterNetworkingAvailable() succeeds.
+    // NoInlining keeps the JIT from pulling Booster types into callers.
+    // =========================================================================
+    public static class Bug15_BoosterNet
+    {
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static void Register()
+        {
+            var mod = new LaunchPadBooster.Mod("AimeeBugFixes", Plugin.Version);
+            // Booster's default validator refuses joins unless both sides run the
+            // exact same version. The sync message format is stable, so accept any.
+            mod.Networking.VersionValidator = new AnyVersionValidator();
+            mod.Networking.RegisterMessage<AIMeeSyncMessage>();
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static void SendIdleSync(RobotMining robot)
+        {
+            var syncMsg = new AIMeeSyncMessage
+            {
+                ReferenceId = robot.ReferenceId,
+                WorldPosition = robot.ThingTransformPosition,
+                WorldRotation = robot.ThingTransform.rotation
+            };
+            syncMsg.SendAll(-1); // Send to all clients
+        }
+
+        private class AnyVersionValidator : IVersionValidator
+        {
+            public bool ValidateVersion(string version)
+            {
+                return true;
+            }
+        }
+    }
+
+    // =========================================================================
+    // BUG 16: Idle AIMeE sinks into terrain / tips over on clients
+    //
+    // Problem: On clients, AIMeE is a non-kinematic rigidbody with her
+    // WheelColliders disabled (WheeledBase enables them only with authority).
+    // DynamicThing.UpdateNetworkPosition() has two paths:
+    //   - Server body awake: snaps pose AND sets velocity to the server's.
+    //   - Server body asleep (idle): only MovePosition/MoveRotation — velocity
+    //     is never reset, so gravity accumulates every physics step.
+    // When a player returns to render range, PhysicsOnRender(true) wakes the
+    // client body. While idle, nothing clears the gravity velocity, so she
+    // sinks/tilts (worse if the terrain collider hasn't baked yet). Commanding
+    // her to move wakes the server body, switching back to the path that
+    // overwrites velocity — which is why moving her "fixes" it.
+    //
+    // Fix: Postfix on WheeledBase.PhysicsUpdate (runs after
+    // UpdateNetworkPosition). For non-authority AIMeE that the server reports
+    // as sleeping, zero velocity and angular velocity so the per-tick snap to
+    // the server rest pose holds.
+    // =========================================================================
+    public static class Bug16_IdleClientSinkFix
+    {
+        public static void PhysicsUpdate_Postfix(WheeledBase __instance)
+        {
+            if (__instance.HasAuthority || !(__instance is RobotMining))
+                return;
+            if (__instance.IsOccluded || __instance.Joint != null || __instance.IsChild)
+                return;
+            if (!__instance.LastPhysicsUpdate.IsSleeping)
+                return;
+
+            var rb = __instance.RigidBody;
+            if (rb == null || rb.isKinematic)
+                return;
+
+            if (AimeeDebugOverlay.Enabled && Plugin.ShouldLog(string.Format("Bug16-{0}", __instance.GetInstanceID()), 5f))
+                Plugin.Log.LogInfo(string.Format(
+                    "[Bug16] Idle client hold AIMeE#{0}: cleared vel={1:F3} angVel={2:F3}, drift={3:F3}m",
+                    __instance.GetInstanceID(), rb.velocity.magnitude, rb.angularVelocity.magnitude,
+                    Vector3.Distance(rb.position, __instance.LastPhysicsUpdate.WorldPosition)));
+
+            rb.velocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
         }
     }
 
@@ -1913,8 +2021,9 @@ namespace AimeeBugFixes
     }
 
     // =========================================================================
-    // BUG 10 Network Message: Force position/rotation sync via LaunchPad Booster
-    // Bypasses culling to ensure all clients get Unstuck() position updates
+    // BUG 15 Network Message: Force position/rotation sync via LaunchPad Booster
+    // Sent by the server for idle AIMeEs so distant clients don't keep a stale pose.
+    // Only registered/used when LaunchPadBooster 0.3+ is loaded (see Bug15_BoosterNet).
     // =========================================================================
     public class AIMeeSyncMessage : INetworkMessage
     {
@@ -1944,13 +2053,11 @@ namespace AimeeBugFixes
                 if (NetworkManager.IsServer)
                     return; // Server doesn't need to process its own sync
 
-                // Search all RobotMining instances for matching ReferenceId
-                var aimee = UnityEngine.Object.FindObjectsOfType<RobotMining>()
-                    .FirstOrDefault(r => r.ReferenceId == ReferenceId);
+                var aimee = Referencable.Find<RobotMining>(ReferenceId);
 
                 if (aimee == null)
                 {
-                    if (Plugin.ShouldLog("Bug15-SyncMsg-NotFound", 5f))
+                    if (AimeeDebugOverlay.Enabled && Plugin.ShouldLog("Bug15-SyncMsg-NotFound", 5f))
                         Plugin.Log.LogWarning(string.Format("[Bug15] Sync message received but AIMeE not found (ReferenceId={0})", ReferenceId));
                     return;
                 }
@@ -1959,7 +2066,7 @@ namespace AimeeBugFixes
                 aimee.ThingTransform.position = WorldPosition;
                 aimee.ThingTransform.rotation = WorldRotation;
 
-                if (Plugin.ShouldLog("Bug15-SyncMsg-Apply", 10f))
+                if (AimeeDebugOverlay.Enabled && Plugin.ShouldLog("Bug15-SyncMsg-Apply", 10f))
                     Plugin.Log.LogInfo(string.Format(
                         "[Bug15] Position sync applied to AIMeE#{0}: pos=({1:F1},{2:F1},{3:F1})",
                         aimee.GetInstanceID(), WorldPosition.x, WorldPosition.y, WorldPosition.z));

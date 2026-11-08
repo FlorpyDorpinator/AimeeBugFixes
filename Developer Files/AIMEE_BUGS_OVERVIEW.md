@@ -1,6 +1,6 @@
 # AIMeE Bug Overview
 
-14 bugs make AIMeE non-functional in multiplayer and partially broken in singleplayer. All stem from the Orbital/Deep Combustion update rewrite of `RobotMining`.
+16 bugs make AIMeE non-functional in multiplayer and partially broken in singleplayer. All stem from the Orbital/Deep Combustion update rewrite of `RobotMining`.
 
 | # | Bug | What happens |
 |---|-----|-------------|
@@ -18,6 +18,7 @@
 | 12 | **Ghost ore on clients** | Mined ore stays visible on clients. `TryMineServer` missing `SetDensityWorldSpace` call. |
 | 13 | **Targets underground ore** | `IsNearSurface` checks one voxel — misses cave ceilings, queues unreachable ore. |
 | 14 | **Stale mining queue** | Queue never cleared on pickup, power-on, or TargetXYZ write. Stale entries waste time and block other AIMeEs via `AllAimeeQueuedMinables`. |
-| 15 | **Network desync when idle** | Syncs position every 2 seconds when idle (velocity < 0.05) to bypass culling on distant clients. |
+| 15 | **Network desync when idle** | Distant clients keep a stale position for idle AIMeE, so she appears in the ground or tipped over. Fixed by syncing position every 5 seconds while idle (velocity < 0.001) over LaunchPadBooster networking. Found and fixed by StormCircuit. See [BUG_15_NETWORK_DESYNC.md](BUG_15_NETWORK_DESYNC.md). |
+| 16 | **Idle AIMeE sinks on clients** | While the server reports AIMeE asleep, the client snaps her pose but never clears velocity, so gravity builds up. Velocity is now zeroed on clients while she's idle. |
 
-All 14 are fixed in the [AimeeBugFixes](https://steamcommunity.com/sharedfiles/filedetails/?id=3674960841) mod (v0.15.3). Native fix recommendations in [DEVELOPER_RECOMMENDATIONS.md](DEVELOPER_RECOMMENDATIONS.md). Full analysis in [BUG_REPORT.md](BUG_REPORT.md).
+All 16 are fixed in the [AimeeBugFixes](https://steamcommunity.com/sharedfiles/filedetails/?id=3674960841) mod (v0.16.0). Native fix recommendations in [DEVELOPER_RECOMMENDATIONS.md](DEVELOPER_RECOMMENDATIONS.md). Full analysis in [BUG_REPORT.md](BUG_REPORT.md).

@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModMetadata xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Name>AIMeE Bug Fixes</Name>
-  <Author>FlorpyDorp</Author>
-  <Version>0.15.3</Version>
+  <Author>FlorpyDorp, StormCircuit</Author>
+  <Version>0.16.0</Version>
   <WorkshopHandle>3674960841</WorkshopHandle>
+  <ModSide>Both</ModSide>
   <Description>This is a Plugin Mod. It requires BepInEx to be installed with the StationeersLaunchPad plugin.
 See: https://github.com/StationeersLaunchPad/StationeersLaunchPad
 
-Fixes fourteen bugs with the AIMeE mining robot:
+Multiplayer: install on the server AND every player's client. Since v0.16.0 the mod uses LaunchPadBooster networking (included with StationeersLaunchPad), which requires matching mods on both sides to join.
+
+Fixes sixteen bugs with the AIMeE mining robot:
 
 1. Mine Deadlock: AIMeE stops mining after first ore because _mineCancellation is never reset after Mine() completes.
 2. Off-State Teleporting: When turned off but receiving logic, AIMeE hops/teleports because TryUnstuck/PathToTarget have no OnOff guard.
@@ -23,12 +26,22 @@ Fixes fourteen bugs with the AIMeE mining robot:
 12. Ghost Ore Fix: Ore mined by AIMeE stays visible on multiplayer clients. Fixed by injecting a VoxelChangeEvent directly into the SyncList, bypassing SetDensityWorldSpace entirely. Zero server-side terrain work. Client receives the event and calls MineAtPositionClient to remove the ore. Works for all surface ore visible to players.
 13. Underground Ore Fix: AIMeE targets ore deep underground in tunnels and caves. The surface check (IsNearSurface) only tests a single voxel 3 blocks above the ore. In a tunnel, that point is empty, so underground ore passes the check. Fixed with a column scan that detects cave ceilings — if solid terrain exists above an empty gap, the ore is rejected as unreachable.
 14. Stale Queue Fix: AIMeE's ore queue is never cleared when picked up, turned on, or given a TargetXYZ. Stale entries point to ore at old locations and block other AIMeEs via AllAimeeQueuedMinables. Fixed by clearing the queue on pickup, power-on, and TargetX/Y/Z writes.
+15. Idle Network Desync (by StormCircuit): On dedicated servers, idle AIMeEs appear in the ground or tipped over for players who were far away. The server now resyncs idle AIMeE's position to all clients every 5 seconds over LaunchPadBooster networking.
+16. Idle Client Sink: While the server reports AIMeE as idle, clients kept her pose but never cleared her velocity, so gravity pulled her down. Velocity is now cleared on clients while she's idle.
 
 Debug overlay now shows [SERVER]/[REMOTE] labels and displays client-appropriate data on dedicated servers.
 
-Works on both dedicated servers and clients.</Description>
+Works on both dedicated servers and clients.
+
+Credits: FlorpyDorp (author). StormCircuit (dedicated-server testing, investigation, and the Bug 15 network sync fix).</Description>
 
   <ChangeLog><![CDATA[
+v0.16.0: Dedicated server idle desync fixes — thanks to StormCircuit
+- Bug 15 (StormCircuit): Server resyncs idle AIMeE position/rotation to all clients every 5s via LaunchPadBooster networking, fixing AIMeE appearing in the ground or tipped over for distant players
+- Bug 16: Clients clear idle AIMeE's velocity while the server reports her asleep, so she no longer sinks between updates
+- Multiplayer: the mod is now required on the server and every client (LaunchPadBooster join check). Any AimeeBugFixes version is accepted
+- If LaunchPadBooster is missing or older than 0.3, only Bug 15 is disabled; all other fixes still load
+
 v0.15.3: Bug 12 improved — two-event approach (no terrain holes)
 - Bug 12: Previous fix (density 0) carved visible holes in terrain on clients
 - Now uses two VoxelChangeEvents per mine: event 1 (density 0) removes ore,
@@ -206,8 +219,9 @@ v0.1.0: Initial release
   </Tags>
   <InGameDescription><![CDATA[<size="30"><color=#ffa500>AIMeE Bug Fixes</color></size>
 <color=#ff0000>This is a Plugin Mod. It requires BepInEx with StationeersLaunchPad.</color>
+<color=#ff0000>Multiplayer: install on the server AND every client.</color>
 
-Fixes fourteen AIMeE mining robot bugs:
+Fixes sixteen AIMeE mining robot bugs:
 
 <color=#ffa500>1. Mine Deadlock</color>
 AIMeE stops after first ore because the mining cancellation token is never reset.
@@ -250,6 +264,14 @@ AIMeE targets ore deep underground in tunnels/caves. Column scan now detects cav
 
 <color=#ffa500>14. Stale Queue Fix</color>
 AIMeE's ore queue isn't cleared on pickup, power-on, or TargetXYZ set. Stale entries waste time and block other AIMeEs. Queue now resets on relocation.
+
+<color=#ffa500>15. Idle Network Desync (Multiplayer)</color>
+Idle AIMeEs appear in the ground for distant players on dedicated servers. Server resyncs idle position every 5s. Fix by StormCircuit.
+
+<color=#ffa500>16. Idle Client Sink (Multiplayer)</color>
+Idle AIMeE sinks on clients because her velocity was never cleared. Now cleared while she's idle.
+
+<color=#888888>Credits: FlorpyDorp (author), StormCircuit (dedicated-server testing and the Bug 15 fix).</color>
 
 <color=#888888>Debug overlay shows [SERVER]/[REMOTE] labels. On dedicated server clients, server-only values (queue, target, motor) display as unavailable.</color>
 ]]></InGameDescription>

@@ -1,22 +1,28 @@
 # AIMeE Bug Fixes
 
-A Stationeers plugin mod that fixes 14 bugs with the AIMeE mining robot, in single player and multiplayer.
+A Stationeers plugin mod that fixes 16 bugs with the AIMeE mining robot, in single player and multiplayer.
 
 [Steam Workshop page](https://steamcommunity.com/sharedfiles/filedetails/?id=3674960841)
 
 ## Requirements
 
 - [BepInEx](https://github.com/BepInEx/BepInEx) 5.x
-- [StationeersLaunchPad](https://github.com/StationeersLaunchPad/StationeersLaunchPad)
+- [StationeersLaunchPad](https://github.com/StationeersLaunchPad/StationeersLaunchPad) (includes LaunchPadBooster, which the mod uses for multiplayer sync; nothing extra to install)
 
 ## Multiplayer / dedicated servers
 
-AIMeE's driving and mining logic runs **only on the server**. The mod must be installed and enabled on the server (dedicated or host) for most fixes to apply. With the mod on a client only, you get just the client-side fixes (tread animation, `MineablesInQueue` estimate).
+**Install the mod on the server and on every player's client.**
 
-To confirm it loaded, check the server's `BepInEx/LogOutput.log` for:
+- AIMeE's driving and mining logic runs only on the server, so most fixes need the server copy.
+- Since v0.16.0, the mod sends its own idle position sync (Bug 15) using LaunchPadBooster networking. Booster checks that the server and each joining player run the same networked mods, so a player without AimeeBugFixes can't join a server running it, and vice versa.
+- Any AimeeBugFixes version is accepted, so being one release behind won't block joining.
+- If LaunchPadBooster is missing or older than 0.3 (very old StationeersLaunchPad), only Bug 15 is skipped; every other fix still loads.
+
+To confirm it loaded, check `BepInEx/LogOutput.log` for:
 
 ```
-AIMeE Bug Fixes v0.15.3 loading...
+AIMeE Bug Fixes v0.16.0 loading...
+  [Bug15] Registered AIMeeSyncMessage with LaunchPadBooster
 AIMeE Bug Fixes: N patches applied, 0 failed
 ```
 
@@ -38,12 +44,20 @@ AIMeE Bug Fixes: N patches applied, 0 failed
 | 12 | Mined ore stays visible on clients | Inject client voxel sync events |
 | 13 | Targets ore in caves/tunnels | Column scan rejects ore under a cave ceiling |
 | 14 | Stale ore queue after relocation | Clear queue on pickup, power-on, and TargetX/Y/Z writes |
+| 15 | Idle AIMeE shows in the ground / tipped over for distant players on dedicated servers | Server resyncs idle AIMeE's position to all clients every 5 s (by StormCircuit) |
+| 16 | Idle AIMeE sinks on clients | Clear client-side velocity while the server reports her idle |
 
 Full write-ups are in [Developer Files/](Developer%20Files/):
 
 - [AIMEE_BUGS_OVERVIEW.md](Developer%20Files/AIMEE_BUGS_OVERVIEW.md): summary table
 - [BUG_REPORT.md](Developer%20Files/BUG_REPORT.md): root-cause analysis for each bug
 - [DEVELOPER_RECOMMENDATIONS.md](Developer%20Files/DEVELOPER_RECOMMENDATIONS.md): suggested native fixes for the game code
+- [BUG_15_NETWORK_DESYNC.md](Developer%20Files/BUG_15_NETWORK_DESYNC.md): the dedicated-server idle desync investigation
+
+## Credits
+
+- **FlorpyDorp**: author
+- **[StormCircuit](https://github.com/StormCircuit)**: dedicated-server testing and investigation, and the Bug 15 idle network sync fix
 
 ## Debug overlay
 

@@ -70,6 +70,16 @@
       <HintPath>$(StationeersPath)\BepInEx\plugins\StationeersLaunchPad\StationeersMods.Interface.dll</HintPath>
       <Private>false</Private>
     </Reference>
+
+    <!-- LaunchPadBooster ships with StationeersLaunchPad; never bundle it (Bug 15 loads it optionally) -->
+    <Reference Include="LaunchPadBooster">
+      <HintPath>$(StationeersPath)\BepInEx\plugins\StationeersLaunchPad\LaunchPadBooster.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UniTask">
+      <HintPath>$(StationeersManagedPath)\UniTask.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- Dev: Copy to BepInEx scripts folder for hot-reload (F6) -->
